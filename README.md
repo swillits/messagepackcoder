@@ -6,26 +6,31 @@ The MsgPackArchiver and MsgPackUnarchiver classes are drop-in replacements for
 NSKeyedArchiver and NSKeyedUnarchiver, which use the MessagePack protocol for storage.
 
 
-Performance
-=============
+Benefits
+-------------
 MsgPackArchiver and MsgPackUnarchiver are significantly faster (multiple times) than
 the standard Cocoa classes and use less space to store the data, while still being
 NSCoder subclasses.
 
 
+Caveats
+-------------
+Part of the performance gain is by the MsgPack coder explicitly handling NSString,
+NSArray, and NSDictionary, that is,  _not_ relying on their NSCoding implementations.
+This means when you decode a string/array/dictionary using MsgPackUnarchiver, it will
+create NSString/NSArray/NSDictionary instances, not instances of your given subclass.
+
 
 Stability
-=============
+-------------
 There are unit tests demonstrating the code works (at least with the given
 test cases) but there's no guarantee of production readiness at the moment. If you'd
 like to use it, please review the code and make any contributions. (This was mostly
 a quick hackathon project.)
 
 
-
-
 Requirements
-=============
+-------------
 
 This project uses "CMP", which is a C implementation of the MessagePack protocol.
 You can find that project here: https://github.com/camgunz/cmp
@@ -36,7 +41,7 @@ There are no OS version requirements for this code, but it currently uses MRC on
 
 
 License
-=============
+-------------
 
 Portions not including "CMP" are copyright (c) 2014, Seth Willits
 
