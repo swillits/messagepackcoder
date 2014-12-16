@@ -1,0 +1,1 @@
+erb -T "-" Tests.erb > Tests.m

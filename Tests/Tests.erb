@@ -1,0 +1,358 @@
+//
+//  Tests.m
+//  MessagePackCoder
+//  https://github.com/swillits/messagepackcoder
+//
+//  Created by Seth Willits on 12/4/14.
+//  Copyright (c) 2014 Seth Willits. All rights reserved.
+//
+
+#import <Cocoa/Cocoa.h>
+#import <XCTest/XCTest.h>
+#import "MsgPackArchiver.h"
+#import "MsgPackUnarchiver.h"
+
+
+
+@interface Foo : NSObject <NSCoding>
+@property (strong) id empty;
+@property (strong) NSNull * null;
+@property (strong) NSString * string;
+@property (strong) NSNumber * number;
+@property (strong) NSDictionary * dictionary;
+@end
+
+
+
+@interface Tests : XCTestCase
+@end
+
+
+@implementation Tests
+
+- (void)setUp
+{
+	[super setUp];
+}
+
+- (void)tearDown
+{
+	[super tearDown];
+}
+
+
+
+- (void)testBytes
+{
+	const char * bytes = "here are some\0'random' bytes.\0All bytes are equal!";
+	size_t length = 50;
+	
+	NSData * data1 = [NSData data];
+	NSData * data2 = [NSData dataWithBytesNoCopy:(void *)bytes length:length freeWhenDone:NO];
+	
+	[self _testRoot:data1];
+	[self _testRoot:data2];
+	
+	NSMutableData * mdata = [NSMutableData data];
+	MsgPackArchiver * a = [[MsgPackArchiver alloc] initForWritingWithMutableData:mdata];
+	[a encodeObject:data1 forKey:@"key0"];
+	[a encodeObject:data2 forKey:@"key1"];
+	[a finishEncoding];
+
+	MsgPackUnarchiver * u = [[MsgPackUnarchiver alloc] initForReadingWithData:mdata];
+	XCTAssertEqualObjects([u decodeObjectForKey:@"key0"], data1);
+	XCTAssertEqualObjects([u decodeObjectForKey:@"key1"], data2);
+}
+
+
+<%-
+type_tests = [
+	
+	["Bool",    :value, ["YES", "NO"]],
+	["Int",     :value, %w{0 -1 INT_MAX INT_MIN}],
+	["Int32",   :value, %w{0 -1 INT32_MAX INT32_MIN}],
+	["Int64",   :value, %w{0 -1 INT64_MAX INT64_MIN}],
+	["Integer", :value, %w{0 -1 NSIntegerMax NSIntegerMin}],
+	["Float",   :value, %w{0.0f -1.0f 3.14159265358979323846264338327950288419716939937510f FLT_MAX FLT_MIN}],
+	["Double",  :value, %w{0.0 -1.0 3.14159265358979323846264338327950288419716939937510 DBL_MAX DBL_MIN}],
+	
+	["Size",    :size, ["NSMakeSize(0.0, 0.0)", "NSMakeSize(738.1234567, 987.6543210)", "NSMakeSize(CGFLOAT_MAX, CGFLOAT_MIN)"]],
+	["Point",   :point, ["NSMakePoint(0.0, 0.0)", "NSMakePoint(738.1234567, 987.6543210)", "NSMakePoint(CGFLOAT_MAX, CGFLOAT_MIN)"]],
+	["Rect",    :rect, ["NSMakeRect(0.0, 0.0, 738.1234567, 987.6543210)", "NSMakeRect(CGFLOAT_MIN, CGFLOAT_MAX, CGFLOAT_MAX, CGFLOAT_MIN)"]],
+	
+	["Object",  :object, [
+		'@""',
+		'@"striéng"',
+		'@"Iлｔêｒԉãｔｉｏԉɑｌìｚãｔí߀л"',
+		'NSNull.null',
+		'@{@"key": @"value"}',
+		'@[@"a", @"b", @"c", @(1), @(2), @(3)]',
+		'@{@"key": @(1324.5), @(5) : @[@"a", NSNull.null, [[[Foo alloc] init] autorelease]]}'
+	]]
+]
+-%>
+
+
+<%- type_tests.each do |test| %>
+	<%- value_selector = test[0] %>
+	<%- kind = test[1] %>
+	<%- values = test[2] %>
+	
+
+- (void)test<%= value_selector %>
+{
+	<%- values.each do |value| -%>
+	<%- if kind == :object -%>
+	[self _testRoot:<%= value %>];
+	<%- elsif kind == :value -%>
+	[self _testRoot:@(<%= value %>)];
+	<%- elsif kind == :size -%>
+	[self _testRoot:[NSValue valueWithSize:<%= value %>]];
+	<%- elsif kind == :point -%>
+	[self _testRoot:[NSValue valueWithPoint:<%= value %>]];
+	<%- elsif kind == :rect -%>
+	[self _testRoot:[NSValue valueWithRect:<%= value %>]];
+	<%- end -%>
+	<%- end -%>
+	
+	NSMutableData * mdata = [NSMutableData data];
+	MsgPackArchiver * a = [[MsgPackArchiver alloc] initForWritingWithMutableData:mdata];
+	<%- value_index = 0 -%>
+	<%- values.each do |value| -%>
+	<%- key = "key#{value_index}" -%>
+	<%- value_index = value_index + 1 -%>
+	[a encode<%= value_selector %>:<%= value %> forKey:@"<%= key %>"];
+	<%- end -%>
+	[a finishEncoding];
+	
+	MsgPackUnarchiver * u = [[MsgPackUnarchiver alloc] initForReadingWithData:mdata];
+	<%- value_index = 0 -%>
+	<%- values.each do |value| -%>
+	<%- key = "key#{value_index}" -%>
+	<%- value_index = value_index + 1 -%>
+	<%- if kind == :object -%>
+	XCTAssertEqualObjects([u decode<%= value_selector %>ForKey:@"<%= key %>"], (<%= value %>));
+	<%- elsif kind == :value -%>
+	XCTAssertEqual([u decode<%= value_selector %>ForKey:@"<%= key %>"], <%= value %>);
+	<%- elsif kind == :size -%>
+	XCTAssert(NSEqualSizes([u decodeSizeForKey:@"<%= key %>"], <%= value %>));
+	<%- elsif kind == :point -%>
+	XCTAssert(NSEqualPoints([u decodePointForKey:@"<%= key %>"], <%= value %>));
+	<%- elsif kind == :rect -%>
+	XCTAssert(NSEqualRects([u decodeRectForKey:@"<%= key %>"], <%= value %>));
+	<%- end -%>
+	<%- end -%>
+}
+
+<%- end -%>
+
+
+
+
+- (void)_testRoot:(id)oldRoot
+{
+	NSData * data = [MsgPackArchiver archivedDataWithRootObject:oldRoot];
+	XCTAssertNotNil(data);
+	
+	id newRoot = [MsgPackUnarchiver unarchiveObjectWithData:data];
+	XCTAssertNotNil(newRoot);
+	
+	[self assertDeepCompare:oldRoot to:newRoot];
+}
+
+
+
+- (void)assertDeepCompare:(id)rootA to:(id)rootB
+{
+	// As long as each custom class we're testing properly implements -isEqual: and -hash, then this will do a full deep comparison
+	// Note that we're assuming for custom classes in this testing rig, the keys encoded and decoded are also compared in -isEqual:
+	// so that we're fairly testing whether the decoded value is equal to the value that was encoded.
+	XCTAssert([rootA isEqual:rootB]);
+}
+
+
+
+
+
+
+#pragma mark -
+#pragma mark Performance Test
+
+- (void)testArchivingPerformanceNSCoder
+{
+	__block NSUInteger length = 0;
+	
+	[self measureBlock:^{
+		NSMutableData * data = [NSMutableData data];
+		NSKeyedArchiver * archiver = [[[NSKeyedArchiver alloc] initForWritingWithMutableData:data] autorelease];
+		[self archiveWithCoder:archiver];
+		[archiver finishEncoding];
+		length = data.length;
+	}];
+	
+	NSLog(@"NSCoder length: %lu", length);
+}
+
+
+- (void)testArchivingPerformanceMsgPack
+{
+	__block NSUInteger length = 0;
+	
+	[self measureBlock:^{
+		NSMutableData * data = [NSMutableData data];
+		MsgPackArchiver * archiver = [[[MsgPackArchiver alloc] initForWritingWithMutableData:data] autorelease];
+		[self archiveWithCoder:archiver];
+		[archiver finishEncoding];
+		length = data.length;
+	}];
+	
+	NSLog(@"MsgPack length: %lu", length);
+}
+
+
+
+- (void)archiveWithCoder:(NSCoder *)coder
+{
+	NSMutableDictionary * dict = [NSMutableDictionary dictionary];
+	NSMutableArray * intArray = [NSMutableArray array];
+	NSMutableArray * strArray = [NSMutableArray array];
+	NSMutableData * data = [NSMutableData data];
+	
+	for (int i = 0; i < 100000; i++) {
+		NSString * s = [NSString stringWithFormat:@"string %d string %d string %d string %d string %d", rand(), rand(), rand(), rand(), rand()];
+		[coder encodeInt:i forKey:[NSString stringWithFormat:@"int_%d", i]];
+		[coder encodeObject:s forKey:[NSString stringWithFormat:@"string_%d", i]];
+		[coder encodeBool:(i % 2 == 0) forKey:[NSString stringWithFormat:@"bool_%d", i]];
+		[intArray addObject:@(i)];
+		[strArray addObject:s];
+		[dict setObject:[@[@(i), s] objectAtIndex:i % 2] forKey:[NSString stringWithFormat:@"key_%d", i]];
+		[data appendBytes:(const void *)&i length:sizeof(int)];
+	}
+	
+	[coder encodeObject:intArray forKey:@"intArray"];
+	[coder encodeObject:strArray forKey:@"strArray"];
+	[coder encodeBytes:data.bytes length:data.length forKey:@"bytes"];
+	[coder encodeObject:data forKey:@"data"];
+	[coder encodeObject:dict forKey:@"dictionary"];
+}
+
+
+
+
+
+- (void)testUnarchivingPerformanceNSCoder
+{
+	NSMutableData * data = [NSMutableData data];
+	NSKeyedArchiver * archiver = [[[NSKeyedArchiver alloc] initForWritingWithMutableData:data] autorelease];
+	[self archiveWithCoder:archiver];
+	[archiver finishEncoding];
+	
+	
+	[self measureBlock:^{
+		NSKeyedUnarchiver * unarchiver = [[[NSKeyedUnarchiver alloc] initForReadingWithData:data] autorelease];
+		[self unarchiveWithCoder:unarchiver];
+	}];
+}
+
+
+- (void)testUnarchivingPerformanceMsgPack
+{
+	NSMutableData * data = [NSMutableData data];
+	MsgPackArchiver * archiver = [[[MsgPackArchiver alloc] initForWritingWithMutableData:data] autorelease];
+	[self archiveWithCoder:archiver];
+	[archiver finishEncoding];
+	
+	
+	[self measureBlock:^{
+		MsgPackUnarchiver * unarchiver = [[[MsgPackUnarchiver alloc] initForReadingWithData:data] autorelease];
+		[self unarchiveWithCoder:unarchiver];
+	}];
+}
+
+
+
+- (void)unarchiveWithCoder:(NSCoder *)coder
+{
+	for (int i = 0; i < 1000; i++) {
+		[coder decodeIntForKey:[NSString stringWithFormat:@"int_%d", i]];
+		[coder decodeObjectForKey:[NSString stringWithFormat:@"string_%d", i]];
+		[coder decodeBoolForKey:[NSString stringWithFormat:@"bool_%d", i]];
+	}
+	
+	
+	[coder decodeObjectForKey:@"intArray"];
+	[coder decodeObjectForKey:@"strArray"];
+	[coder decodeBytesForKey:@"bytes" returnedLength:NULL];
+	[coder decodeObjectForKey:@"data"];
+	[coder decodeObjectForKey:@"dictionary"];
+}
+
+
+
+@end
+
+
+
+
+
+
+
+#pragma mark -
+
+@implementation Foo
+
+- (id)init
+{
+	if ((self = [super init])) {
+		self.empty = nil;
+		self.null = NSNull.null;
+		self.string = @"Iлｔêｒԉãｔｉｏԉɑｌìｚãｔí߀л";
+		self.number = @(53.9);
+		self.dictionary = @{@"this" : @"is boring"};
+	}
+	
+	return self;
+}
+
+
+- (id)initWithCoder:(NSCoder *)coder
+{
+	if ((self = [super init])) {
+		self.empty      = [coder decodeObjectForKey:@"empty"];
+		self.null       = [coder decodeObjectForKey:@"null"];
+		self.string     = [coder decodeObjectForKey:@"string"];
+		self.number     = [coder decodeObjectForKey:@"number"];
+		self.dictionary = [coder decodeObjectForKey:@"dictionary"];
+	}
+	
+	return self;
+}
+
+
+- (void)encodeWithCoder:(NSCoder *)coder
+{
+	[coder encodeObject:self.empty      forKey:@"empty"];
+	[coder encodeObject:self.null       forKey:@"null"];
+	[coder encodeObject:self.string     forKey:@"string"];
+	[coder encodeObject:self.number     forKey:@"number"];
+	[coder encodeObject:self.dictionary forKey:@"dictionary"];
+}
+
+- (NSUInteger)hash
+{
+	// We don't care about performance.
+	return 0;
+}
+
+
+- (BOOL)isEqual:(id)obj
+{
+	if (![obj isKindOfClass:[Foo class]]) {
+		return NO;
+	}
+	
+	return YES;
+}
+
+@end
+
